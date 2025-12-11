@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF.js 뷰어</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        #pdf-render {
+            border: 1px solid #ccc;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 15px;
+        }
+        button {
+            padding: 10px 20px;
+            cursor: pointer;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover { background-color: #555; }
+        span { margin: 0 15px; font-weight: bold; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+
+    <div class="controls">
+        <button id="prev">이전 페이지</button>
+        <span>Page: <span id="page-num"></span> / <span id="page-count"></span></span>
+        <button id="next">다음 페이지</button>
+    </div>
+
+    <canvas id="pdf-render"></canvas>
+
+    <script>
+        // 보여줄 PDF 파일 경로 (같은 폴더에 sample.pdf가 있어야 함)
+        const url = './sample.pdf';
+
+        let pdfDoc = null,
+            pageNum = 1,
+            pageRendering = false,
+            pageNumPending = null,
+            scale = 1.5, // 확대 배율
+            canvas = document.getElementById('pdf-render'),
+            ctx = canvas.getContext('2d');
+
+        // PDF.js 워커 설정 (필수)
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        /**
+         * 페이지 렌더링 함수
+         */
+        function renderPage(num) {
+            pageRendering = true;
+            
+            // 페이지 가져오기
+            pdfDoc.getPage(num).then(function(page) {
+                var viewport = page.getViewport({scale: scale});
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                // 캔버스에 PDF 그리기
+                var renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+                var renderTask = page.render(renderContext);
+
+                // 렌더링 완료 후 대기 중인 페이지가 있으면 렌더링
+                renderTask.promise.then(function() {
+                    pageRendering = false;
+                    if (pageNumPending !== null) {
+                        renderPage(pageNumPending);
+                        pageNumPending = null;
+                    }
+                });
+            });
+
+            // 현재 페이지 번호 업데이트
+            document.getElementById('page-num').textContent = num;
+        }
+
+        /**
+         * 렌더링 중일 때 다음 요청 대기 처리
+         */
+        function queueRenderPage(num) {
+            if (pageRendering) {
+                pageNumPending = num;
+            } else {
+                renderPage(num);
+            }
+        }
+
+        /**
+         * 이전 페이지 버튼
+         */
+        function onPrevPage() {
+            if (pageNum <= 1) {
+                return;
+            }
+            pageNum--;
+            queueRenderPage(pageNum);
+        }
+        document.getElementById('prev').addEventListener('click', onPrevPage);
+
+        /**
+         * 다음 페이지 버튼
+         */
+        function onNextPage() {
+            if (pageNum >= pdfDoc.numPages) {
+                return;
+            }
+            pageNum++;
+            queueRenderPage(pageNum);
+        }
+        document.getElementById('next').addEventListener('click', onNextPage);
+
+        /**
+         * PDF 문서 로드 시작
+         */
+        pdfjsLib.getDocument(url).promise.then(function(pdfDoc_) {
+            pdfDoc = pdfDoc_;
+            document.getElementById('page-count').textContent = pdfDoc.numPages;
+
+            // 첫 페이지 렌더링
+            renderPage(pageNum);
+        }).catch(function(error){
+            console.error('PDF 로드 에러:', error);
+            alert('PDF 파일을 찾을 수 없거나 오류가 발생했습니다. (console 확인 필요)');
+        });
+    </script>
+</body>
+</html>
